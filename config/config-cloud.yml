@@ -1,0 +1,24 @@
+# Stage can be local or cloud
+stage: "cloud"
+
+# The database object contains placeholders whose values will be fetched from
+# a secret Vault. When testing locally, the file system is used,
+# when running in the cloud the OCI Vault is used.
+# when stage = cloud, The values following {SECRET} should be replaced by the vault secret id
+# when stage = local, The values following {SECRET} should be replaced by the a file containing the secret
+database:
+  driverClass: "oracle.jdbc.driver.OracleDriver"
+  # You can get a url from tnsnames.ora in the wallet zip file and prefix it with "jdbc:oracle:thin:@"
+  url: "jdbc:oracle:thin:@(description=(retry_count=20)(retry_delay=3)(address=(protocol=tcps)(port=1522)(host=your_host))(connect_data=(service_name=your_service_name))(security=(ssl_server_cert_dn=\"CN=your_cn\")))"
+  validationQuery: "select 1 from dual"
+  checkConnectionOnBorrow: true
+  user: "admin"
+  password: "{SECRET}ocid1.vaultsecret.oc1.iad.replaceme"
+  keyStoreBase64: "{SECRET}ocid1.vaultsecret.oc1.iad.replaceme"
+  keyStorePassword: "{SECRET}ocid1.vaultsecret.oc1.iad.replaceme"
+  trustStoreBase64: "{SECRET}ocid1.vaultsecret.oc1.iad.replaceme"
+
+logging:
+  level: INFO
+  loggers:
+    nomisvai: DEBUG
