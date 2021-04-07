@@ -18,7 +18,7 @@ Here is a summary of what it contains:
 * DB access done with JDBI using [SQL Object API](src/main/java/nomisvai/db/UserDao.java)
 * Schema creation using [Liquibase](src/main/resources/db/changelog.xml)
 * Supports
-  BouncyCastle [BCFKS keystore wallets](src/main/java/nomisvai/configuration/InMemoryWalletDataSourceFactory.java#L120-L60)
+  BouncyCastle [BCFKS keystore wallets](src/main/java/nomisvai/configuration/InMemoryWalletDataSourceFactory.java#L120-L160)
 * [Script](scripts/convertWallet.sh) provided to convert JKS keystore to BCFKS keystore
 * Secrets downloaded from the OCI Vault by the
   service [using instance principal authentication](src/main/java/nomisvai/secret/OciVaultSecretRetriever.java)
