@@ -12,6 +12,10 @@ import java.util.Base64;
  * <p>The service using this must be deployed in an OCI instance that has the proper grants to read
  * the secret. see:
  * https://docs.oracle.com/en-us/iaas/Content/Identity/Tasks/callingservicesfrominstances.htm
+ *
+ * <p>Creating a policy similar to this will allow the service to read secrets in the given
+ * compartment: "Allow myInstanceDynamicGroup to read secret-bundle in compartment
+ * MyVaultCompartment"
  */
 public class OciVaultSecretRetriever implements SecretRetriever {
     private final SecretsClient secretsClient;

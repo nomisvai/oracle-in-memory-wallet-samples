@@ -42,8 +42,8 @@ from your local disk.
   scripts/convertWallet.sh wallet Welcome1 Welcome1
 ```
 
-* create a fake vault containing your secrets (use the same filename as below,
-* as they are hardcoded in the unit tests:
+* create a fake vault containing your secrets (use the same filename as below, as they are hardcoded
+  in the unit tests:
 
 ```
 mkdir fakevault
