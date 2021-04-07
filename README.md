@@ -6,19 +6,23 @@ This is a small sample service demonstrating the use of in-memory wallets retrie
 OCI Vault. All components required by this service are included in the Oracle free
 tier: https://www.oracle.com/cloud/free/
 
+`If you are only interested in snippets to connect using in-memory wallets, look at the` [unit tests](src/test/java/nomisvai/SampleServiceApplicationTest.java) `for samples using in-memory wallets of different formats (jks, cwallet.sso, ewallet.p12, bcfks)`
+
 Here is a summary of what it contains:
 
-* A simple rest service built using Dropwizard
+* A simple [rest service](src/main/java/nomisvai/SampleServiceApplication.java) built using
+  Dropwizard/Jersey/Jetty
 * Augmented Dropwizard
-  DataSourceFactory (https://www.dropwizard.io/en/latest/manual/configuration.html#database) to
-  support in-memory wallet
-* DB access done with JDBI using SQL Object API
-* Schema creation using Liquibase
-* Supports BouncyCastle keystore (BCFKS) wallet
-* Script provided to convert JKS keystore to BCFKS keystore
-* See unit tests for samples using in-memory wallets of different formats (jks, cwallet.sso,
-  ewallet.p12)
-* Secrets downloaded from the OCI Vault by the service using instance principal authentication.
+  [DataSourceFactory](https://www.dropwizard.io/en/latest/manual/configuration.html#database) to
+  support [in-memory wallets](src/main/java/nomisvai/configuration/InMemoryWalletDataSourceFactory.java)
+* DB access done with JDBI using [SQL Object API](src/main/java/nomisvai/db/UserDao.java)
+* Schema creation using [Liquibase](src/main/resources/db/changelog.xml)
+* Supports
+  BouncyCastle [BCFKS keystore wallets](src/main/java/nomisvai/configuration/InMemoryWalletDataSourceFactory.java#L120-L60)
+* [Script](scripts/convertWallet.sh) provided to convert JKS keystore to BCFKS keystore
+* Secrets downloaded from the OCI Vault by the
+  service [using instance principal authentication](src/main/java/nomisvai/secret/OciVaultSecretRetriever.java)
+  .
 
 Running on your desktop
 ==
@@ -26,8 +30,9 @@ Running on your desktop
 Wallets and secrets
 --
 The local setup will connect to your autonomous database but will use a local file based vault to
-simulate the OCI Vault, see FileBasedSecretRetriever.java. It simply reads files containing secrets
-from your local disk.
+simulate the OCI Vault,
+see [FileBasedSecretRetriever.java](src/main/java/nomisvai/secret/FileBasedSecretRetriever.java). It
+simply reads files containing secrets from your local disk.
 
 * From the root of the repo, create a wallet/ directory and a fakevault/ directory.
 * Download your ADB-S wallet and unzip it in wallet/
@@ -62,13 +67,14 @@ printf "store_destination_password_used_when_executing_convertWallet.sh" > fakev
 How to start the SampleService application locally
 --
 Note that every time the service is started, liquibase is invoked to create/update the schema of the
-configured db, the schema consist of one table named USERS (see:
-`src/main/resources/db/sql/initial_schema.sql`). Liquibase will also create the 2 tables it needs to
-manage its config.
+configured db, the schema consist of one table named USERS (
+see: [initial_schema.sql](src/main/resources/db/sql/initial_schema.sql). Liquibase will also create
+the 2 tables it needs to manage its config.
 
 1. Run `mvn clean install` to build the service, if the wallet and fakevault directories are setup
    correctly, unit tests will execute a simple "select 1 from dual" on the configured database using
-   each wallet format from memory. see: `src/test/java/nomisvai/SampleServiceApplicationTest.java`
+   each wallet format from memory.
+   see: [SampleServiceApplicationTest.java](src/test/java/nomisvai/SampleServiceApplicationTest.java)
 1. After a successful build, the service can be started
    with `java -jar target/sample-oracle-in-memory-wallet-1.0-SNAPSHOT.jar server target/config/config-local.yml`
 1. To validate the service and see the pre-seeded test users, open a browser
