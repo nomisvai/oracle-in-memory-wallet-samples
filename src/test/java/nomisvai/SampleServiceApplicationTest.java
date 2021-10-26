@@ -21,11 +21,15 @@ import oracle.security.pki.OraclePKIProvider;
 import org.bouncycastle.jcajce.provider.BouncyCastleFipsProvider;
 import org.jdbi.v3.core.Jdbi;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 /** These tests expect the */
 class SampleServiceApplicationTest {
+    private static String activeUrl;
     private static String dbUrl;
+    private static String dbUrlTls;
+
     private static boolean initFailed = true;
     private static String keyStorePassword;
     private static String userName;
@@ -33,63 +37,24 @@ class SampleServiceApplicationTest {
     private static String vaultDir = System.getProperty("fakevaultdir");
     private static String walletDir = System.getProperty("walletdir");
 
-    @BeforeAll
-    public static void setup() {
-        vaultDir = vaultDir.endsWith(File.separator) ? vaultDir : vaultDir + File.separator;
-        walletDir = walletDir.endsWith(File.separator) ? walletDir : walletDir + File.separator;
-        Security.addProvider(new BouncyCastleFipsProvider());
-        userName = readString(vaultDir + "user.name");
-        userPassword = readString(vaultDir + "user.password");
-        keyStorePassword = readString(vaultDir + "keystore.password");
-        dbUrl = readString(walletDir + "tnsnames.ora");
-        // Extract the first line and use as the connect string
-        dbUrl =
-                "jdbc:oracle:thin:@"
-                        + dbUrl.substring(dbUrl.indexOf("=") + 1, dbUrl.indexOf("\n")).trim();
-
-        initFailed =
-                Stream.of(userName, userPassword, keyStorePassword, dbUrl)
-                                .filter(Objects::isNull)
-                                .count()
-                        > 0;
-    }
-
     @SneakyThrows
-    public static String readString(String fileName) {
-        byte[] content = readBytes(fileName);
-        return content == null ? null : new String(content, StandardCharsets.UTF_8);
-    }
+    static SSLContext createSSLContextBcfks(
+            InputStream keyStoreStream, InputStream trustStoreStream) {
+        KeyManagerFactory keyManagerFactory = KeyManagerFactory.getInstance("PKIX");
+        TrustManagerFactory trustManagerFactory = TrustManagerFactory.getInstance("PKIX");
 
-    @SneakyThrows
-    public static byte[] readBytes(String fileName) {
-        try {
-            return Files.readAllBytes(Paths.get(fileName));
-        } catch (RuntimeException e) {
-            System.out.println("Cannot read " + fileName + ", " + e);
-            return null;
-        }
-    }
+        KeyStore keyStore = KeyStore.getInstance("BCFKS");
+        keyStore.load(keyStoreStream, keyStorePassword.toCharArray());
+        keyManagerFactory.init(keyStore, keyStorePassword.toCharArray());
 
-    private static void jdbiTest(SSLContext sslContext) throws Exception {
-        long start = System.currentTimeMillis();
-        try {
-            Properties info = new Properties();
+        KeyStore trustStore = KeyStore.getInstance("BCFKS");
+        trustStore.load(trustStoreStream, keyStorePassword.toCharArray());
+        trustManagerFactory.init(trustStore);
 
-            info.put(OracleConnection.CONNECTION_PROPERTY_USER_NAME, userName);
-            info.put(OracleConnection.CONNECTION_PROPERTY_PASSWORD, userPassword);
-
-            OracleDataSource ods = new OracleDataSource();
-            ods.setSSLContext(sslContext);
-            ods.setURL(dbUrl);
-            ods.setConnectionProperties(info);
-            Jdbi jdbi = Jdbi.create(ods);
-            jdbi.withHandle(
-                    handle -> {
-                        return handle.createQuery("SELECT 1 FROM dual").mapTo(String.class).first();
-                    });
-        } finally {
-            System.out.println("Elapsed " + (System.currentTimeMillis() - start) + "ms");
-        }
+        SSLContext sslContext = SSLContext.getInstance("SSL");
+        sslContext.init(
+                keyManagerFactory.getKeyManagers(), trustManagerFactory.getTrustManagers(), null);
+        return sslContext;
     }
 
     @SneakyThrows
@@ -115,18 +80,16 @@ class SampleServiceApplicationTest {
     }
 
     @SneakyThrows
-    static SSLContext createSSLContextBcfks(
-            InputStream keyStoreStream, InputStream trustStoreStream) {
-        KeyManagerFactory keyManagerFactory = KeyManagerFactory.getInstance("PKIX");
-        TrustManagerFactory trustManagerFactory = TrustManagerFactory.getInstance("PKIX");
+    static SSLContext createSSLContextP12(InputStream keyStoreStream) {
+        TrustManagerFactory trustManagerFactory =
+                TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
+        KeyManagerFactory keyManagerFactory =
+                KeyManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
 
-        KeyStore keyStore = KeyStore.getInstance("BCFKS");
+        KeyStore keyStore = KeyStore.getInstance("PKCS12", new OraclePKIProvider());
         keyStore.load(keyStoreStream, keyStorePassword.toCharArray());
         keyManagerFactory.init(keyStore, keyStorePassword.toCharArray());
-
-        KeyStore trustStore = KeyStore.getInstance("BCFKS");
-        trustStore.load(trustStoreStream, keyStorePassword.toCharArray());
-        trustManagerFactory.init(trustStore);
+        trustManagerFactory.init(keyStore);
 
         SSLContext sslContext = SSLContext.getInstance("SSL");
         sslContext.init(
@@ -153,21 +116,104 @@ class SampleServiceApplicationTest {
     }
 
     @SneakyThrows
-    static SSLContext createSSLContextP12(InputStream keyStoreStream) {
+    static SSLContext createSSLContextTls() {
         TrustManagerFactory trustManagerFactory =
                 TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
-        KeyManagerFactory keyManagerFactory =
-                KeyManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
 
-        KeyStore keyStore = KeyStore.getInstance("PKCS12", new OraclePKIProvider());
-        keyStore.load(keyStoreStream, keyStorePassword.toCharArray());
-        keyManagerFactory.init(keyStore, keyStorePassword.toCharArray());
-        trustManagerFactory.init(keyStore);
-
+        trustManagerFactory.init((KeyStore) null);
         SSLContext sslContext = SSLContext.getInstance("SSL");
-        sslContext.init(
-                keyManagerFactory.getKeyManagers(), trustManagerFactory.getTrustManagers(), null);
+        sslContext.init(null, trustManagerFactory.getTrustManagers(), null);
         return sslContext;
+    }
+
+    private static void jdbiTest(SSLContext sslContext) throws Exception {
+        long start = System.currentTimeMillis();
+        try {
+            Properties info = new Properties();
+
+            info.put(OracleConnection.CONNECTION_PROPERTY_USER_NAME, userName);
+            info.put(OracleConnection.CONNECTION_PROPERTY_PASSWORD, userPassword);
+
+            OracleDataSource ods = new OracleDataSource();
+            ods.setSSLContext(sslContext);
+            ods.setURL(activeUrl);
+            ods.setConnectionProperties(info);
+            Jdbi jdbi = Jdbi.create(ods);
+            jdbi.withHandle(
+                    handle -> {
+                        return handle.createQuery("SELECT 1 FROM dual").mapTo(String.class).first();
+                    });
+        } finally {
+            System.out.println("Elapsed " + (System.currentTimeMillis() - start) + "ms");
+        }
+    }
+
+    @SneakyThrows
+    public static byte[] readBytes(String fileName) {
+        try {
+            return Files.readAllBytes(Paths.get(fileName));
+        } catch (RuntimeException e) {
+            System.out.println("Cannot read " + fileName + ", " + e);
+            return null;
+        }
+    }
+
+    @SneakyThrows
+    public static String readString(String fileName) {
+        byte[] content = readBytes(fileName);
+        return content == null ? null : new String(content, StandardCharsets.UTF_8);
+    }
+
+    @BeforeAll
+    public static void setup() {
+        vaultDir = vaultDir.endsWith(File.separator) ? vaultDir : vaultDir + File.separator;
+        walletDir = walletDir.endsWith(File.separator) ? walletDir : walletDir + File.separator;
+        Security.addProvider(new BouncyCastleFipsProvider());
+        userName = readString(vaultDir + "user.name");
+        userPassword = readString(vaultDir + "user.password");
+        keyStorePassword = readString(vaultDir + "keystore.password");
+        dbUrl = readString(walletDir + "tnsnames.ora");
+        // Extract the first line and use as the connect string
+        dbUrl =
+                "jdbc:oracle:thin:@"
+                        + dbUrl.substring(dbUrl.indexOf("=") + 1, dbUrl.indexOf("\n")).trim();
+
+        // Little hack to get the Tls url for waletlesss connection test
+        dbUrlTls = dbUrl.replaceAll("1522", "1521");
+
+        initFailed =
+                Stream.of(userName, userPassword, keyStorePassword, dbUrl)
+                                .filter(Objects::isNull)
+                                .count()
+                        > 0;
+    }
+
+    @Test
+    public void bcfksTest() throws Exception {
+        byte[] keyStore = readBytes(walletDir + "keystore.bcfks");
+        byte[] trustStore = readBytes(walletDir + "truststore.bcfks");
+        if (initFailed || keyStore == null || trustStore == null) {
+            System.out.println("bcfksTest disabled, missing info");
+            return;
+        }
+
+        jdbiTest(
+                createSSLContextBcfks(
+                        new ByteArrayInputStream(keyStore), new ByteArrayInputStream(trustStore)));
+        System.out.println("Connected successfully using BCFKS");
+    }
+
+    @Test
+    public void cwalletSsoTest() throws Exception {
+        byte[] keyStore = readBytes(walletDir + "cwallet.sso");
+
+        if (initFailed || keyStore == null) {
+            System.out.println("cwalletSsoTest disabled, missing info");
+            return;
+        }
+
+        jdbiTest(createSSLContextSso(new ByteArrayInputStream(keyStore)));
+        System.out.println("Connected successfully using cwallet.sso");
     }
 
     @Test
@@ -187,34 +233,6 @@ class SampleServiceApplicationTest {
     }
 
     @Test
-    public void cwalletSsoTest() throws Exception {
-        byte[] keyStore = readBytes(walletDir + "cwallet.sso");
-
-        if (initFailed || keyStore == null) {
-            System.out.println("cwalletSsoTest disabled, missing info");
-            return;
-        }
-
-        jdbiTest(createSSLContextSso(new ByteArrayInputStream(keyStore)));
-        System.out.println("Connected successfully using cwallet.sso");
-    }
-
-    @Test
-    public void bcfksTest() throws Exception {
-        byte[] keyStore = readBytes(walletDir + "keystore.bcfks");
-        byte[] trustStore = readBytes(walletDir + "truststore.bcfks");
-        if (initFailed || keyStore == null || trustStore == null) {
-            System.out.println("bcfksTest disabled, missing info");
-            return;
-        }
-
-        jdbiTest(
-                createSSLContextBcfks(
-                        new ByteArrayInputStream(keyStore), new ByteArrayInputStream(trustStore)));
-        System.out.println("Connected successfully using BCFKS");
-    }
-
-    @Test
     public void p12Test() throws Exception {
         byte[] keyStore = readBytes(walletDir + "ewallet.p12");
         if (initFailed || keyStore == null) {
@@ -224,5 +242,25 @@ class SampleServiceApplicationTest {
 
         jdbiTest(createSSLContextP12(new ByteArrayInputStream(keyStore)));
         System.out.println("Connected successfully using P12");
+    }
+
+    @BeforeEach
+    public void setupEach() {
+        activeUrl = dbUrl;
+    }
+
+    /**
+     * Testing the new wallet less connection by using a created ssl context bypassing the default
+     * one.
+     */
+    @Test
+    public void tlsTest() throws Exception {
+        if (initFailed) {
+            System.out.println("tlsTest disabled, missing info");
+            return;
+        }
+        activeUrl = dbUrlTls;
+        jdbiTest(createSSLContextTls());
+        System.out.println("Connected successfully using TLS");
     }
 }
